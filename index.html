@@ -3,135 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jedi Fluid Simulation - 食指追蹤版</title>
+    <title>Jedi Fluid - GitHub Pages Stable Version</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: #000;
-            overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        canvas {
-            width: 100vw;
-            height: 100vh;
-            display: block;
-        }
+        body { margin: 0; padding: 0; background-color: #000; overflow: hidden; font-family: sans-serif; }
+        canvas { width: 100vw; height: 100vh; display: block; }
         #ui-layer {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #00d2ff;
-            pointer-events: none;
-            text-shadow: 0 0 10px #00d2ff;
-            z-index: 10;
+            position: absolute; top: 20px; left: 20px; color: #00d2ff;
+            pointer-events: none; text-shadow: 0 0 8px #00d2ff; z-index: 10;
         }
         .status-dot {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            background: #ff0000;
-            border-radius: 50%;
-            margin-right: 5px;
-            box-shadow: 0 0 5px #ff0000;
+            display: inline-block; width: 10px; height: 10px;
+            background: #ff0000; border-radius: 50%; margin-right: 5px;
         }
-        .active {
-            background: #00ff00;
-            box-shadow: 0 0 5px #00ff00;
-        }
+        .active { background: #00ff00; box-shadow: 0 0 8px #00ff00; }
         #video-input {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            width: 160px;
-            height: 120px;
-            border: 2px solid #333;
-            border-radius: 8px;
-            transform: scaleX(-1);
-            background: #111;
-            z-index: 5;
+            position: absolute; bottom: 10px; right: 10px;
+            width: 120px; height: 90px; border: 1px solid #444;
+            transform: scaleX(-1); background: #000; z-index: 5;
         }
         #loading-overlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: black;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            z-index: 100;
-            transition: opacity 0.5s;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: white; z-index: 100;
         }
         .spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #333;
-            border-top: 5px solid #00d2ff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
+            width: 40px; height: 40px; border: 4px solid #333;
+            border-top: 4px solid #00d2ff; border-radius: 50%;
+            animation: spin 1s linear infinite; margin-bottom: 15px;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #error-msg { color: #ff4444; margin-top: 15px; text-align: center; max-width: 80%; }
     </style>
 </head>
 <body>
 
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <p id="loading-text">正在初始化原力... (載入模型中)</p>
+        <p id="loading-text">正在召喚原力... (載入模型中)</p>
+        <div id="error-msg"></div>
     </div>
 
     <div id="ui-layer">
-        <h1>LIGHTSABER FLUID</h1>
-        <p><span id="status-dot" class="status-dot"></span> 狀態: <span id="status-text">載入中...</span></p>
-        <p>操作指南: 對著鏡頭舉起手，使用「食指」揮舞</p>
+        <h2>LIGHTSABER FLUID</h2>
+        <p><span id="status-dot" class="status-dot"></span> 狀態: <span id="status-text">初始化中...</span></p>
     </div>
 
     <video id="video-input" playsinline></video>
     <canvas id="fluid-canvas"></canvas>
 
-    <!-- 載入 MediaPipe 核心與手部模型 -->
+    <!-- 載入 MediaPipe 資源 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
-    <!-- 載入流體模擬引擎 (使用更穩定的 CDN 備份) -->
+    
+    <!-- 載入流體引擎 (使用穩定 CDN) -->
     <script src="https://unpkg.com/webgl-fluid-simulation@1.0.1/dist/webgl-fluid-simulation.js"></script>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('load', async () => {
             const videoElement = document.getElementById('video-input');
             const canvasElement = document.getElementById('fluid-canvas');
             const statusDot = document.getElementById('status-dot');
             const statusText = document.getElementById('status-text');
             const loadingOverlay = document.getElementById('loading-overlay');
-            const loadingText = document.getElementById('loading-text');
+            const errorMsg = document.getElementById('error-msg');
 
             let lastX = 0, lastY = 0;
 
-            // 1. 初始化流體 (放在 try-catch 以防外部庫載入失敗)
-            function initFluid() {
-                try {
-                    if (typeof fluidSimulation === "function") {
-                        fluidSimulation({
-                            canvas: canvasElement,
-                            DENSITY_DISSIPATION: 0.97,
-                            VELOCITY_DISSIPATION: 0.98,
-                            SPLAT_RADIUS: 0.3,
-                            COLORFUL: false,
-                            BACK_COLOR: { r: 0, g: 0, b: 0 }
-                        });
-                        return true;
-                    }
-                } catch (e) {
-                    console.error("流體引擎啟動失敗", e);
+            // 1. 初始化流體引擎
+            try {
+                if (typeof fluidSimulation === 'function') {
+                    fluidSimulation({
+                        canvas: canvasElement,
+                        DENSITY_DISSIPATION: 0.98,
+                        VELOCITY_DISSIPATION: 0.99,
+                        SPLAT_RADIUS: 0.28,
+                        COLORFUL: false,
+                        BACK_COLOR: { r: 0, g: 0, b: 0 }
+                    });
+                } else {
+                    throw new Error("流體引擎腳本載入不完全");
                 }
-                return false;
+            } catch (e) {
+                errorMsg.innerText = "流體引擎載入失敗，請檢查網路。";
+                return;
             }
 
             // 2. 初始化手部追蹤
             const hands = new Hands({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }
             });
 
             hands.setOptions({
@@ -142,36 +103,34 @@
             });
 
             hands.onResults((results) => {
-                // 只要有任何結果回傳，就關閉載入畫面
+                // 成功抓到結果後關閉載入畫面
                 if (loadingOverlay.style.display !== 'none') {
-                    loadingOverlay.style.opacity = '0';
-                    setTimeout(() => loadingOverlay.style.display = 'none', 500);
+                    loadingOverlay.style.display = 'none';
                 }
 
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     statusDot.classList.add('active');
-                    statusText.innerText = "原力已連線";
+                    statusText.innerText = "已偵測到食指";
 
-                    const landmarks = results.multiHandLandmarks[0];
-                    const tip = landmarks[8]; // 食指
+                    const tip = results.multiHandLandmarks[0][8]; // 食指尖
+                    const tx = (1 - tip.x) * window.innerWidth;
+                    const ty = tip.y * window.innerHeight;
+                    
+                    const dx = tx - lastX;
+                    const dy = ty - lastY;
 
-                    const targetX = (1 - tip.x) * window.innerWidth;
-                    const targetY = tip.y * window.innerHeight;
-                    const dx = targetX - lastX;
-                    const dy = targetY - lastY;
-
-                    if (typeof splat === "function") {
-                        splat(targetX, targetY, dx * 5, dy * 5, { r: 0, g: 0.6, b: 1.0 });
+                    if (window.splat) {
+                        // 絕地藍色效果
+                        window.splat(tx, ty, dx * 6, dy * 6, { r: 0, g: 0.7, b: 1.0 });
                     }
-                    lastX = targetX;
-                    lastY = targetY;
+                    lastX = tx; lastY = ty;
                 } else {
                     statusDot.classList.remove('active');
-                    statusText.innerText = "等待手部進入鏡頭...";
+                    statusText.innerText = "請將手舉到鏡頭前";
                 }
             });
 
-            // 3. 啟動相機並嘗試初始化
+            // 3. 啟動相機
             const camera = new Camera(videoElement, {
                 onFrame: async () => {
                     await hands.send({ image: videoElement });
@@ -180,20 +139,9 @@
                 height: 480
             });
 
-            loadingText.innerText = "正在請求相機權限...";
-            
-            if (!initFluid()) {
-                loadingText.innerText = "引擎載入失敗，請重新整理網頁";
-                return;
-            }
-
-            camera.start()
-                .then(() => {
-                    statusText.innerText = "相機已啟動，請舉起手";
-                })
-                .catch(err => {
-                    loadingText.innerText = "錯誤: 無法存取相機。請確保在 HTTPS 環境下執行。";
-                });
+            camera.start().catch(err => {
+                errorMsg.innerHTML = "相機啟動失敗！<br>請檢查是否有授權權限，且確認網址為 HTTPS。";
+            });
 
             window.addEventListener('resize', () => {
                 canvasElement.width = window.innerWidth;
