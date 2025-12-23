@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jedi Fluid Simulation - 食指追蹤版</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00d2ff;
+            pointer-events: none;
+            text-shadow: 0 0 10px #00d2ff;
+            z-index: 10;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #ff0000;
+            border-radius: 50%;
+            margin-right: 5px;
+            box-shadow: 0 0 5px #ff0000;
+        }
+        .active {
+            background: #00ff00;
+            box-shadow: 0 0 5px #00ff00;
+        }
+        #video-input {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 160px;
+            height: 120px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            transform: scaleX(-1);
+            background: #111;
+            z-index: 5;
+        }
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: black;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 100;
+            transition: opacity 0.5s;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #333;
+            border-top: 5px solid #00d2ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <p id="loading-text">正在初始化原力... (載入模型中)</p>
+    </div>
+
+    <div id="ui-layer">
+        <h1>LIGHTSABER FLUID</h1>
+        <p><span id="status-dot" class="status-dot"></span> 狀態: <span id="status-text">載入中...</span></p>
+        <p>操作指南: 對著鏡頭舉起手，使用「食指」揮舞</p>
+    </div>
+
+    <video id="video-input" playsinline></video>
+    <canvas id="fluid-canvas"></canvas>
+
+    <!-- 載入 MediaPipe 核心與手部模型 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <!-- 載入流體模擬引擎 (使用更穩定的 CDN 備份) -->
+    <script src="https://unpkg.com/webgl-fluid-simulation@1.0.1/dist/webgl-fluid-simulation.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const videoElement = document.getElementById('video-input');
+            const canvasElement = document.getElementById('fluid-canvas');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const loadingText = document.getElementById('loading-text');
+
+            let lastX = 0, lastY = 0;
+
+            // 1. 初始化流體 (放在 try-catch 以防外部庫載入失敗)
+            function initFluid() {
+                try {
+                    if (typeof fluidSimulation === "function") {
+                        fluidSimulation({
+                            canvas: canvasElement,
+                            DENSITY_DISSIPATION: 0.97,
+                            VELOCITY_DISSIPATION: 0.98,
+                            SPLAT_RADIUS: 0.3,
+                            COLORFUL: false,
+                            BACK_COLOR: { r: 0, g: 0, b: 0 }
+                        });
+                        return true;
+                    }
+                } catch (e) {
+                    console.error("流體引擎啟動失敗", e);
+                }
+                return false;
+            }
+
+            // 2. 初始化手部追蹤
+            const hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            hands.onResults((results) => {
+                // 只要有任何結果回傳，就關閉載入畫面
+                if (loadingOverlay.style.display !== 'none') {
+                    loadingOverlay.style.opacity = '0';
+                    setTimeout(() => loadingOverlay.style.display = 'none', 500);
+                }
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    statusDot.classList.add('active');
+                    statusText.innerText = "原力已連線";
+
+                    const landmarks = results.multiHandLandmarks[0];
+                    const tip = landmarks[8]; // 食指
+
+                    const targetX = (1 - tip.x) * window.innerWidth;
+                    const targetY = tip.y * window.innerHeight;
+                    const dx = targetX - lastX;
+                    const dy = targetY - lastY;
+
+                    if (typeof splat === "function") {
+                        splat(targetX, targetY, dx * 5, dy * 5, { r: 0, g: 0.6, b: 1.0 });
+                    }
+                    lastX = targetX;
+                    lastY = targetY;
+                } else {
+                    statusDot.classList.remove('active');
+                    statusText.innerText = "等待手部進入鏡頭...";
+                }
+            });
+
+            // 3. 啟動相機並嘗試初始化
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({ image: videoElement });
+                },
+                width: 640,
+                height: 480
+            });
+
+            loadingText.innerText = "正在請求相機權限...";
+            
+            if (!initFluid()) {
+                loadingText.innerText = "引擎載入失敗，請重新整理網頁";
+                return;
+            }
+
+            camera.start()
+                .then(() => {
+                    statusText.innerText = "相機已啟動，請舉起手";
+                })
+                .catch(err => {
+                    loadingText.innerText = "錯誤: 無法存取相機。請確保在 HTTPS 環境下執行。";
+                });
+
+            window.addEventListener('resize', () => {
+                canvasElement.width = window.innerWidth;
+                canvasElement.height = window.innerHeight;
+            });
+        });
+    </script>
+</body>
+</html>
